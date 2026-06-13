@@ -1,0 +1,21 @@
+{
+  "india gdp": [
+    {
+      "title": "India GDP reaches new heights in recent estimates",
+      "url": "https://www.economic-reports.com/india-gdp-latest",
+      "snippet": "According to the latest global economic reports, the GDP of India currently stands at approximately 4.15 trillion USD, showcasing robust economic growth across multiple manufacturing and service sectors."
+    },
+    {
+      "title": "List of countries by GDP (nominal) - Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)",
+      "snippet": "India is currently the 5th largest economy in the world. As of recent estimates, India's GDP is 4.15 trillion USD. The United States remains first."
+    }
+  ],
+  "usa gdp": [
+    {
+      "title": "United States Economy and GDP Data",
+      "url": "https://www.economic-reports.com/usa-gdp-latest",
+      "snippet": "The latest economic analysis reported today that the USA GDP is estimated at 31.8 trillion USD. This represents a solid increase from the previous quarter."
+    }
+  ]
+}
