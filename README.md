@@ -153,17 +153,4 @@ By appending the `Observation` to the `context`, the next time the `for` loop ru
 1. **`main.py`, `llm.py`, `tools.py`**: Your complete, standalone and modular ReAct loop implementation.
 2. **`outputs.txt`**: A text file containing the full thought/action/observation traces for all 3 questions.
 
----
-
-## Evaluation Rubric (100 Marks)
-| Component | Marks |
-| :--- | :--- |
-| Tool Implementation (Python definitions) | 20 |
-| ReAct Loop Logic & Condition Handling | 25 |
-| Parsing & Tool Orchestration | 15 |
-| Multi-Step Tool Chaining execution | 15 |
-| Clean Thought-Action-Observation Trace | 15 |
-| Code Quality & Safety (e.g. safe `eval`) | 10 |
-
----
-**Professor's Note**: The goal of this assignment is NOT just to get the answers to the 3 questions. It is to build the fundamental "execution engine". Once you deeply understand this `Observe -> Think -> Act` loop, popular tools like LangChain or AutoGen will simply look like helpful abstractions built on top of the system you just wrote. Good luck!
+**Note**: The goal of this assignment is NOT just to get the answers to the 3 questions. It is to build the fundamental "execution engine". Once you deeply understand this `Observe -> Think -> Act` loop, popular tools like LangChain or AutoGen will simply look like helpful abstractions built on top of the system you just wrote. Good luck!
