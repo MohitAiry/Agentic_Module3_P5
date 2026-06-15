@@ -1,156 +1,401 @@
-# Assignment 5: Building a ReAct Agent from Scratch
+# Project 5 Problem: ReAct Agent with Web + Calculator Tools 
 
-## Course Module
-**Agentic AI Systems – Agent Execution Patterns**
+Topic: Agent Execution Patterns, ReAct Loop, Tool Orchestration 
+## Problem Statement 
+Build a ReAct-style agent from scratch (without a framework) that can answer multi-step research questions by interleaving reasoning and tool use. 
+## Available Tools:
+ • web_search(query: str) — simulated with a local JSON file of mock search results (provided) 
 
-### Learning Objectives
-By the end of this assignment, you will be able to:
-1. Implement the Observe → Think → Act → Evaluate loop from scratch.
-2. Understand the core execution engine of frameworks like LangChain, CrewAI, and AutoGen.
-3. Handle multi-tool workflows where one tool's output feeds directly into the next decision.
-4. Experience the ReAct (Reason + Act) pattern to create traceable, debuggable reasoning chains.
+ • calculator(expression: str) — evaluates a Python eval-safe arithmetic expression 
 
----
+ • get_exchange_rate(currency: str) — returns a hardcoded exchange rate dict 
+ 
+ ## Questions the Agent Must Answer:
+  1. “What is the GDP of India in USD, converted to INR?” 
+  2. “If a product costs $150 and there is a 18% GST, what is the final price in INR?” 
+  3. “How many days are there between January 15, 2025 and August 20, 2026?” 
 
-## Background: What is a ReAct Agent?
-Modern Large Language Models (LLMs) often cannot solve complex problems in a single pass. Instead, they follow a cyclic execution pattern known as the **ReAct (Reason + Act) Framework**.
+## Requirements:
+ • The agent must print each Thought → Action → Observation step explicitly 
+ 
+ • Max 8 iterations per question; if not resolved, print “Could not resolve within iteration limit.” 
+ 
+ • The loop must terminate when the model outputs a final Answer: token 
+ 
+## Learning Objectives 
+• Implement the Observe → Think → Act → Evaluate loop from scratch 
 
-The agent alternates between:
-- **Thinking** about what it needs to do next.
-- Choosing an **Action** (calling a tool).
-- **Observing** the result of that action.
-- Updating its context to continue reasoning until a final answer is achieved.
+• Experience the ReAct pattern: traceable, debuggable reasoning chains 
 
-### Real World Example
-If a user asks: *"What is India's GDP in USD converted to INR?"*
-A static LLM prompt might fail or hallucinate. A ReAct Agent, however, dynamically resolves this:
+• Handle multi-tool workflows where one tool’s result feeds into the next decision 
 
-```
-Thought: I need India's GDP.
-Action: web_search("India GDP")
-Observation: 3.94 trillion USD
 
-Thought: Now I need the exchange rate for USD to INR.
-Action: get_exchange_rate("INR")
-Observation: 83.0
+## Part 1: The Tool Library (`tools.py`)
 
-Thought: I will use the calculator to multiply these values.
-Action: calculator("3.94e12 * 83")
-Observation: 327020000000000
+Large Language Models (LLMs) are frozen in time and cannot natively browse the web, calculate math reliably, or access external APIs. To fix this, we give them **Tools**. 
 
-Answer: India's GDP is approximately 327 trillion INR.
-```
+A tool is simply a standard Python function that takes a string input and returns a string output. 
 
----
-
-## Problem Statement
-Your task is to **build a ReAct-style AI agent from scratch** in Python, without using any external agent frameworks. The agent must loop through multi-step reasoning to answer research and calculation questions.
-
-### Available Tools to Implement
-You must implement the following 3 mock tools in your script:
-
-1. **`web_search(query: str)`** 
-   - *Purpose*: Retrieve information from a local JSON dictionary.
-   - *Mock Data*: `{"india gdp": "3.94 trillion USD", "usa gdp": "29.16 trillion USD"}`
-
-2. **`calculator(expression: str)`**
-   - *Purpose*: Evaluate a Python arithmetic expression safely.
-   - *Hint*: Use `eval(expression, {"__builtins__": None}, {})`.
-
-3. **`get_exchange_rate(currency: str)`**
-   - *Purpose*: Return a hardcoded exchange rate dict (e.g., `{"INR": 83.0}`).
-
-4. **Optional**: **`date_difference(date1: str, date2: str)`**
-   - *Purpose*: Calculate days between two dates.
-
-### Questions the Agent Must Answer
-1. “What is the GDP of India in USD, converted to INR?”
-2. “If a product costs $150 and there is a 18% GST, what is the final price in INR?”
-3. “How many days are there between January 15, 2025 and August 20, 2026?”
-
-### Requirements
-1. **Trace Logs**: The agent must print each `Thought` → `Action` → `Observation` step explicitly to the console.
-2. **Iteration Limit**: Set a maximum of 8 iterations per question. If the agent fails to resolve it within 8 steps, it must print: *"Could not resolve within iteration limit."*
-3. **Termination**: The loop must safely terminate when the LLM outputs a final `Answer:` token.
-
----
-
-## Getting Started
-
-### Suggested Project Structure
-```text
-project/
-│
-├── main.py             # Main script containing your LLM loop
-├── llm.py              # LLM integration (e.g. calling Ollama)
-├── tools.py            # Tool implementations (web_search, calculator, etc.)
-├── search_data.json    # Local JSON file for mock web searches
-└── outputs.txt         # Saved traces
-```
-
-### Under the Hood: How ReAct Actually Works
-A ReAct agent is essentially a `while` or `for` loop wrapped around an LLM call and some string parsing. Here is exactly how the magic happens in code:
-
-#### 1. The System Prompt constraint
-The core of the framework is a strict system prompt. You must force the LLM to output its response in an exact format so your Python code can parse it reliably using Regular Expressions (`regex`).
+### The Code
+Here is an example of two tools from our project:
 
 ```python
-SYSTEM_PROMPT = """You are a reasoning agent.
-You must solve the question by following this exact format:
-Thought: <your reasoning here>
-Action: tool_name("arguments")
+import json
 
-Wait for the 'Observation:' from the system. Do NOT generate it yourself.
-Once you have enough info, output:
-Answer: <final answer>
+def calculator(expression: str) -> str:
+    """Evaluates a mathematical expression safely."""
+    try:
+        # We use eval() to do the math, but restrict built-in functions for safety
+        result = eval(expression, {"__builtins__": None}, {})
+        return str(result)
+    except Exception as e:
+        return f"Error in calculation: {e}"
+
+def get_exchange_rate(currency: str) -> str:
+    """Returns exchange rate for a given currency relative to USD."""
+    rates = {"INR": 83.0, "EUR": 0.92}
+    return str(rates.get(currency.upper().strip(), "Rate not found"))
+
+# The crucial mapping dictionary
+TOOLS = {
+    "calculator": calculator,
+    "get_exchange_rate": get_exchange_rate
+}
+```
+
+### 🧠 Intuitive Question 1
+> **Think about the `TOOLS` dictionary:**
+> The LLM itself is just generating raw text (like writing a story). It has no ability to "execute" Python code. How does the `TOOLS` dictionary bridge the gap between the LLM's text output and actual Python execution?
+
+*(Hint: If the LLM generates the text `"calculator"`, how does Python know which function to trigger?)*
+
+---
+
+## Part 2: The LLM Interface (`llm.py`)
+
+The LLM is the "brain" of the agent. In this project, we use a local model via Ollama. However, we don't just want the LLM to talk endlessly—we need it to pause so our Python script can take control.
+
+### The Code
+```python
+import ollama
+
+MODEL_NAME = "qwen2.5:7b-instruct-q8_0"
+
+def call_llm(prompt: str) -> str:
+    """Sends the prompt to our local Ollama model."""
+    response = ollama.generate(
+        model=MODEL_NAME,
+        prompt=prompt,
+        options={
+            # CRITICAL: This stop token tells the LLM to pause.
+            "stop": ["\nObservation:"]
+        }
+    )
+    return response.get("response", "")
+```
+
+### 🧠 Intuitive Question 2
+> **The Stop Token:**
+> In the code above, we pass `{"stop": ["\nObservation:"]}` to the LLM. 
+> If we deleted this line, the agent would try to guess the outcome of its own actions (e.g., hallucinating that a web search returned a specific result) instead of waiting for the real Python function to run. 
+> Why is it so dangerous for an agent to hallucinate an `Observation`? What would happen if it hallucinated the result of a `delete_file` or `send_email` tool?
+
+---
+
+## Part 3: The Execution Engine (`main.py`)
+
+This is where the magic happens. `main.py` contains the `for` loop that glues the Brain (`llm.py`) and the Hands (`tools.py`) together. 
+
+### Step A: The System Prompt
+We strictly instruct the LLM to output text in a highly specific format:
+```text
+Thought: Think about what you need to do next.
+Action: tool_name("arguments")
+```
+
+### Step B: The Loop and Regex
+Because the LLM guarantees its output will match the format above, we can use **Regular Expressions (Regex)** in Python to extract the tool name and arguments.
+
+```python
+    for iteration in range(1, 9):
+        
+        # 1. Ask the LLM what to do next
+        response = call_llm(context).strip()
+        
+        # We append the AI's thought/action to our running memory
+        context += response + "\n"
+        
+        # 2. Extract the tool name and arguments using Regex
+        action_match = re.search(r"Action:\s*(\w+)\((.*)\)", response)
+        
+        if action_match:
+            tool_name = action_match.group(1) # e.g., "calculator"
+            args_str = action_match.group(2)  # e.g., "150 * 1.18"
+            
+            # 3. Execute the tool dynamically using our TOOLS dictionary!
+            args = parse_args(args_str)
+            observation = TOOLS[tool_name](*args) 
+            
+            # 4. Feed the result back into the memory for the next loop iteration
+            context += f"Observation: {observation}\n"
+```
+
+### 🧠 Intuitive Question 3
+> **The Memory Loop:**
+> Notice how we do `context += response` and then later `context += f"Observation: {observation}\n"`. 
+> By the time the loop hits `iteration 2`, the `context` string contains the entire history of Iteration 1. 
+> Why is it absolutely necessary to pass the *entire* history back to the LLM every single time? What would happen if we only sent the `Observation` to the LLM on Iteration 2 without the previous `Thought`?
+
+*(Hint: LLMs are "stateless". They have no memory of the previous API call unless you remind them!)*
+
+---
+
+## Summary
+By reading through these three files, you have just reverse-engineered how many AI agent frameworks like **LangChain** and **CrewAI** work under the hood! 
+
+1. **`llm.py`** generates text and stops exactly when it's supposed to.
+2. **`main.py`** parses that text, finds the requested action, and executes it.
+3. **`tools.py`** provides the real-world capabilities.
+4. The result (Observation) is appended to a massive text string, and the loop starts all over again!
+
+
+# Bonus Tutorial: Mastering ReAct with Tool Chaining
+
+Welcome to the advanced section of the ReAct Agent assignment! Now that you have built the core `Observe -> Think -> Act` loop, we are going to explore one of the most powerful concepts in agentic AI: **Tool Chaining**.
+
+Tool chaining is when an agent uses the **Observation** (output) of one tool as the **Action argument** (input) for the next tool.
+
+## The Goal
+Currently, Question 3 is: 
+*"How many days are there between January 15, 2025 and August 20, 2026?"*
+
+This is a simple one-step problem. The agent just calls the `date_difference` tool. Let's make it more realistic. We are going to change Question 3 to:
+
+> *"How many days are there between **today** and August 20, 2026?"*
+
+---
+
+### 🧠 Intuitive Question 1
+> **Before writing any code, think about this:** 
+> If the agent reads the word "today" in the prompt, what information is it missing? Can the existing `date_difference` tool solve this problem on its own? Why or why not?
+
+*(Hint: Does the agent inherently know what the current date is?)*
+
+---
+
+To solve this, we need to give the agent a way to find out what "today" is *before* it tries to calculate the difference. Follow these steps to implement the changes.
+
+## Step 1: Create the `get_today_date` function
+
+**File to modify:** `tools.py`
+
+Open `tools.py` and add a new Python function that returns the current date. Make sure it returns the date in the exact same format that the `date_difference` tool expects (`Month DD, YYYY`).
+
+Add this code above the `TOOLS` dictionary:
+
+```python
+from datetime import datetime
+
+def get_today_date() -> str:
+    """Returns today's date in 'Month DD, YYYY' format."""
+    return datetime.now().strftime("%B %d, %Y")
+```
+
+---
+
+### 🧠 Intuitive Question 2
+> **Look at the code above:** 
+> Why is it so important that we use `.strftime("%B %d, %Y")`? What would happen if our new tool returned `"2026-06-13"` and the agent passed that directly into the `date_difference` tool? 
+
+*(Hint: Look at how `date_difference` parses the strings passed into it in `tools.py`.)*
+
+---
+
+## Step 2: Register the New Tool
+
+**File to modify:** `tools.py`
+
+Your agent won't know the Python function exists unless you map it in the `TOOLS` dictionary at the bottom of the file.
+
+Update the dictionary to look like this:
+
+```python
+# Map tool names to functions
+TOOLS = {
+    "web_search": web_search,
+    "calculator": calculator,
+    "get_exchange_rate": get_exchange_rate,
+    "date_difference": date_difference,
+    "get_today_date": get_today_date      # <-- Add this new line!
+}
+```
+
+## Step 3: Update the System Prompt
+
+**File to modify:** `main.py`
+
+We have created the code for the tool, but the LLM still doesn't know it has permission to use it. We must update the instructions.
+
+Find the `SYSTEM_PROMPT` variable at the top of `main.py` and add the new tool as option #5:
+
+```python
+SYSTEM_PROMPT = """You are an advanced reasoning agent designed to solve problems using a multi-step ReAct (Reason + Act) loop.
+
+You have access to the following tools:
+1. web_search(query: str) - Retrieves facts from a search engine.
+2. calculator(expression: str) - Evaluates a mathematical expression (e.g. 150 * 1.18).
+3. get_exchange_rate(currency: str) - Returns the exchange rate for a given currency relative to USD (e.g. INR).
+4. date_difference(date1: str, date2: str) - Returns the number of days between two dates formatted as "Month DD, YYYY".
+5. get_today_date() - Returns the current date in "Month DD, YYYY" format. Use this when you need to know today's date.
+
+... (keep the rest of the prompt the same) ...
 """
 ```
 
-#### 2. The Context Loop
-The agent maintains a running "memory" of the conversation in a variable, often called `context`. In each iteration, it sends the *entire* history back to the LLM.
+## Step 4: Change the Question
+
+**File to modify:** `main.py`
+
+Finally, go to the bottom of `main.py` where the `questions` list is defined, and modify the third question to challenge the agent.
 
 ```python
-context = f"{SYSTEM_PROMPT}\n\nQuestion: {question}\n"
-
-for iteration in range(MAX_ITERATIONS):
-    # Pass the entire accumulated history to the model
-    response = call_llm(context).strip()
-    
-    # Immediately append the model's new thought/action to our history
-    context += response + "\n"
+    questions = [
+        "What is the GDP of India in USD, converted to INR?",
+        "If a product costs $150 and there is a 18% GST, what is the final price in INR?",
+        "How many days are there between today and August 20, 2026?" # <-- Update this line
+    ]
 ```
 
-#### 3. String Parsing (Regex)
-The LLM outputs pure text. The ReAct framework's job is to parse that text to figure out what tool the LLM wants to run. We use Python's `re` module for this.
+---
+
+## What to Expect (The Output Trace)
+
+Run your agent! `python main.py`
+
+If implemented correctly, your agent's thought process for Question 3 should now look something like this:
+
+```text
+THINK: I need to calculate the difference in days between today and August 20, 2026. First, I need to know today's date.
+ACT: Executing 'get_today_date' with arguments: ()
+OBSERVE: June 13, 2026
+
+THINK: Now I know today is June 13, 2026. I can use the date_difference tool to calculate the days between June 13, 2026 and August 20, 2026.
+ACT: Executing 'date_difference' with arguments: ('June 13, 2026', 'August 20, 2026')
+OBSERVE: 68
+
+FINAL ANSWER: There are 68 days between today and August 20, 2026.
+```
+
+### 🧠 Intuitive Question 3
+> **Final thought:**
+> Notice how the agent used the exact text `June 13, 2026` from the first Observation as an argument in its second Action. How does the ReAct framework technically make this possible? What part of your `main.py` loop ensures the LLM "remembers" the output of the first tool?
+
+---
+---
+
+## Bonus Challenge 2: Search -> Read Chaining
+
+A real-world AI agent doesn't just read short snippets from a search engine. It clicks on links to read the full context! Let's implement a `read_webpage` tool to force the agent to find a URL using `web_search` and then pass that exact URL into `read_webpage`.
+
+### 🧠 Intuitive Question 4
+> **Consider the search process:**
+> If we ask the agent "What are the three key drivers of India's economy?", the `web_search` tool only gives a short snippet that might not contain the full answer. Why is it important for an agent to be able to dynamically pass URLs between tools, rather than having the developer hardcode the URL?
+
+---
+
+### Step 5: Add the `read_webpage` tool
+
+**File to modify:** `tools.py`
+
+Add this mock webpage reader tool above the `TOOLS` dictionary. This simulates what happens when an agent actually visits a specific URL to read the entire text.
 
 ```python
-    import re
-    # We look for the literal string "Action:" followed by a function name and arguments
-    action_match = re.search(r"Action:\s*(\w+)\((.*)\)", response)
-    
-    if action_match:
-        tool_name = action_match.group(1) # e.g., 'web_search'
-        args_str = action_match.group(2)  # e.g., '"India GDP"'
+def read_webpage(url: str) -> str:
+    """Reads the full content of a webpage given its URL."""
+    mock_pages = {
+        "https://www.economic-reports.com/india-gdp-latest": (
+            "Full Report: India's economy is booming. The GDP is 4.15 trillion USD. "
+            "The three key drivers of the economy are IT, agriculture, and manufacturing. "
+            "Growth is expected to continue into the next decade."
+        ),
+        "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)": (
+            "List of Countries: 1. USA - 31.8 trillion USD, 2. China - 18.53 trillion USD, ... "
+            "5. India - 4.15 trillion USD."
+        ),
+        "https://www.economic-reports.com/usa-gdp-latest": (
+            "USA Economic Report: The GDP has reached 31.8 trillion USD, maintaining its "
+            "position as the largest economy driven by tech and services."
+        )
+    }
+    # Return the content or a 404 error
+    return mock_pages.get(url.strip(" '\""), "Error: 404 Page Not Found.")
 ```
 
-#### 4. Dynamic Tool Execution & Observation
-Once we know what tool the LLM wants, we map the string name (e.g., `"web_search"`) to an actual Python function.
+### Step 6: Register the new tool
+
+**File to modify:** `tools.py`
+
+Don't forget to expose the tool to the system!
 
 ```python
-        # Safely parse the arguments string into actual Python variables
-        args = parse_args(args_str) 
-        
-        # Execute the matched tool dynamically
-        if tool_name in TOOLS:
-            observation = TOOLS[tool_name](*args)
-        
-        # Give the result BACK to the LLM by appending it to the context
-        context += f"Observation: {observation}\n"
+# Map tool names to functions
+TOOLS = {
+    "web_search": web_search,
+    "calculator": calculator,
+    "get_exchange_rate": get_exchange_rate,
+    "date_difference": date_difference,
+    "get_today_date": get_today_date,
+    "read_webpage": read_webpage      # <-- Add this!
+}
 ```
-By appending the `Observation` to the `context`, the next time the `for` loop runs, the LLM will "see" the result of its action and can generate its next `Thought`.
 
-### Deliverables
-1. **`main.py`, `llm.py`, `tools.py`**: Your complete, standalone and modular ReAct loop implementation.
-2. **`outputs.txt`**: A text file containing the full thought/action/observation traces for all 3 questions.
+### Step 7: Update the System Prompt
 
-**Note**: The goal of this assignment is NOT just to get the answers to the 3 questions. It is to build the fundamental "execution engine". Once you deeply understand this `Observe -> Think -> Act` loop, popular tools like LangChain or AutoGen will simply look like helpful abstractions built on top of the system you just wrote. Good luck!
+**File to modify:** `main.py`
+
+Add option #6 to the `SYSTEM_PROMPT` in `main.py`:
+
+```python
+6. read_webpage(url: str) - Reads the full text content of a webpage. Requires a valid URL as the argument.
+```
+
+### Step 8: Update the First Question
+
+**File to modify:** `main.py`
+
+Change the very first question in the `questions` list to require deep reading, rather than a surface-level search:
+
+```python
+    questions = [
+        "According to the latest economic reports, what are the three key drivers of India's economy?", # <-- Update this line
+        "If a product costs $150 and there is a 18% GST, what is the final price in INR?",
+        "How many days are there between today and August 20, 2026?"
+    ]
+```
+
+---
+
+## What to Expect (Search -> Read Trace)
+
+When you run `python main.py` now, watch how the agent interacts with Question 1. It perfectly mirrors how a human browses the web!
+
+```text
+THINK: I need to find the latest economic reports about India's economy to identify its key drivers. I'll start with a web search.
+ACT: Executing 'web_search' with arguments: ('India economy key drivers')
+OBSERVE: Result 1:
+Title: India GDP reaches new heights in recent estimates
+URL: https://www.economic-reports.com/india-gdp-latest
+Snippet: According to the latest global economic reports, the GDP of India currently stands at approximately 4.15 trillion USD...
+
+THINK: The snippet doesn't explicitly list the three key drivers. I need to read the full report at the provided URL.
+ACT: Executing 'read_webpage' with arguments: ('https://www.economic-reports.com/india-gdp-latest')
+OBSERVE: Full Report: India's economy is booming. The GDP is 4.15 trillion USD. The three key drivers of the economy are IT, agriculture, and manufacturing. Growth is expected to continue into the next decade.
+
+THINK: I now have the three key drivers of India's economy from the report.
+FINAL ANSWER: According to the latest economic reports, the three key drivers of India's economy are IT, agriculture, and manufacturing.
+```
+
+### 🧠 Intuitive Question 5
+> **Why this matters:**
+> Notice that the `read_webpage` tool strictly takes a URL. Why couldn't the agent just call `read_webpage("India economy key drivers")`? What fundamental limitation of language models does this multi-step search-and-read process solve? 
+> *(Hint: Think about how a browser works versus a search engine. Why do agents need both?)*
